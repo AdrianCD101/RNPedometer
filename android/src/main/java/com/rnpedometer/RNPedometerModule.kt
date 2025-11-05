@@ -31,6 +31,8 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
     private const val KEY_INITIAL_STEP_COUNT = "initialStepCount"
     private const val KEY_LAST_STEP_COUNT = "lastStepCount"
     private const val KEY_SAVED_DATE = "savedDate"
+    private const val KEY_HISTORY_PREFIX = "history_"
+    private const val MAX_HISTORY_DAYS = 30
   }
 
   init {
@@ -47,11 +49,20 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
     val savedDate = sharedPreferences.getString(KEY_SAVED_DATE, null)
     val currentDate = getCurrentDate()
 
-    // If it's a new day, reset the counters
-    if (savedDate != currentDate) {
+    // If it's a new day, save yesterday's data to history and reset counters
+    if (savedDate != null && savedDate != currentDate) {
+      // Calculate yesterday's total steps before clearing
+      val savedInitial = sharedPreferences.getFloat(KEY_INITIAL_STEP_COUNT, -1f)
+      val savedLast = sharedPreferences.getFloat(KEY_LAST_STEP_COUNT, 0f)
+
+      if (savedInitial != -1f) {
+        val yesterdaySteps = (savedLast - savedInitial).toInt()
+        saveStepHistory(savedDate, yesterdaySteps)
+      }
+
       clearPersistedData()
-    } else {
-      // Load saved values
+    } else if (savedDate == currentDate) {
+      // Load saved values for today
       val savedInitial = sharedPreferences.getFloat(KEY_INITIAL_STEP_COUNT, -1f)
       val savedLast = sharedPreferences.getFloat(KEY_LAST_STEP_COUNT, 0f)
 
@@ -60,6 +71,9 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
         lastStepCount = savedLast
       }
     }
+
+    // Clean up old history (keep only last MAX_HISTORY_DAYS days)
+    cleanupOldHistory()
   }
 
   private fun savePersistedData() {
@@ -85,6 +99,55 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
   private fun getCurrentDate(): String {
     val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     return dateFormat.format(Date())
+  }
+
+  private fun saveStepHistory(date: String, steps: Int) {
+    sharedPreferences.edit().apply {
+      putInt("$KEY_HISTORY_PREFIX$date", steps)
+      apply()
+    }
+  }
+
+  private fun cleanupOldHistory() {
+    val calendar = Calendar.getInstance()
+    calendar.add(Calendar.DAY_OF_YEAR, -MAX_HISTORY_DAYS)
+    val cutoffDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(calendar.time)
+
+    val allKeys = sharedPreferences.all.keys
+    val editor = sharedPreferences.edit()
+
+    for (key in allKeys) {
+      if (key.startsWith(KEY_HISTORY_PREFIX)) {
+        val date = key.substring(KEY_HISTORY_PREFIX.length)
+        if (date < cutoffDate) {
+          editor.remove(key)
+        }
+      }
+    }
+
+    editor.apply()
+  }
+
+  private fun getStepHistoryInternal(days: Int): WritableArray {
+    val historyArray = Arguments.createArray()
+    val calendar = Calendar.getInstance()
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+
+    // Get history for the last 'days' days (not including today)
+    for (i in 1..days) {
+      calendar.time = Date()
+      calendar.add(Calendar.DAY_OF_YEAR, -i)
+      val date = dateFormat.format(calendar.time)
+      val steps = sharedPreferences.getInt("$KEY_HISTORY_PREFIX$date", 0)
+
+      val historyItem = Arguments.createMap().apply {
+        putString("date", date)
+        putInt("steps", steps)
+      }
+      historyArray.pushMap(historyItem)
+    }
+
+    return historyArray
   }
 
 
@@ -148,6 +211,16 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
 
   override fun isStepCountingAvailable(promise: Promise) {
     promise.resolve(stepCounter != null)
+  }
+
+  override fun getStepHistory(days: Double, promise: Promise) {
+    try {
+      val requestedDays = days.toInt().coerceIn(1, MAX_HISTORY_DAYS)
+      val history = getStepHistoryInternal(requestedDays)
+      promise.resolve(history)
+    } catch (e: Exception) {
+      promise.reject("E_HISTORY_ERROR", "Failed to retrieve step history: ${e.message}", e)
+    }
   }
 
   override fun onSensorChanged(event: SensorEvent) {

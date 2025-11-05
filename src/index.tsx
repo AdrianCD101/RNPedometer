@@ -1,5 +1,5 @@
 import { NativeEventEmitter, NativeModules } from 'react-native';
-import type { StepCountData } from './NativeRNPedometer';
+import type { StepCountData, StepHistoryData } from './NativeRNPedometer';
 
 // Get the native module directly from NativeModules
 const RNPedometer = NativeModules.RNPedometer;
@@ -7,7 +7,7 @@ const RNPedometer = NativeModules.RNPedometer;
 // Create event emitter for step counter updates
 const eventEmitter = new NativeEventEmitter(RNPedometer);
 
-export type { StepCountData };
+export type { StepCountData, StepHistoryData };
 
 export function startStepCounterUpdate(): Promise<boolean> {
   return RNPedometer.startStepCounterUpdate();
@@ -19,6 +19,10 @@ export function stopStepCounterUpdate(): Promise<boolean> {
 
 export function isStepCountingAvailable(): Promise<boolean> {
   return RNPedometer.isStepCountingAvailable();
+}
+
+export function getStepHistory(days: number): Promise<StepHistoryData[]> {
+  return RNPedometer.getStepHistory(days);
 }
 
 export function addStepCountListener(callback: (event: StepCountData) => void) {
@@ -33,6 +37,7 @@ const RNPedometerModule = {
   startStepCounterUpdate,
   stopStepCounterUpdate,
   isStepCountingAvailable,
+  getStepHistory,
   addStepCountListener,
   removeStepCountListener,
 };

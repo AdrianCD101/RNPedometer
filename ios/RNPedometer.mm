@@ -4,6 +4,8 @@
 static NSString *const kRNPedometerInitialStepCount = @"RNPedometerInitialStepCount";
 static NSString *const kRNPedometerCurrentStepCount = @"RNPedometerCurrentStepCount";
 static NSString *const kRNPedometerSavedDate = @"RNPedometerSavedDate";
+static NSString *const kRNPedometerHistoryPrefix = @"RNPedometerHistory_";
+static NSInteger const kRNPedometerMaxHistoryDays = 30;
 
 @interface RNPedometer()
 @property (nonatomic, strong) CMPedometer *pedometer;
@@ -37,11 +39,20 @@ RCT_EXPORT_MODULE()
   NSString *savedDate = [defaults stringForKey:kRNPedometerSavedDate];
   NSString *currentDate = [self getCurrentDate];
 
-  // If it's a new day, reset the counters
-  if (![savedDate isEqualToString:currentDate]) {
+  // If it's a new day, save yesterday's data to history and reset counters
+  if (savedDate && ![savedDate isEqualToString:currentDate]) {
+    // Calculate yesterday's total steps before clearing
+    NSNumber *savedInitial = [defaults objectForKey:kRNPedometerInitialStepCount];
+    NSNumber *savedCurrent = [defaults objectForKey:kRNPedometerCurrentStepCount];
+
+    if (savedInitial && savedCurrent) {
+      NSInteger yesterdaySteps = [savedCurrent integerValue] - [savedInitial integerValue];
+      [self saveStepHistory:savedDate steps:yesterdaySteps];
+    }
+
     [self clearPersistedData];
-  } else {
-    // Load saved values
+  } else if ([savedDate isEqualToString:currentDate]) {
+    // Load saved values for today
     NSNumber *savedInitial = [defaults objectForKey:kRNPedometerInitialStepCount];
     NSNumber *savedCurrent = [defaults objectForKey:kRNPedometerCurrentStepCount];
 
@@ -50,6 +61,9 @@ RCT_EXPORT_MODULE()
       _currentStepCount = savedCurrent ?: @0;
     }
   }
+
+  // Clean up old history (keep only last MAX_HISTORY_DAYS days)
+  [self cleanupOldHistory];
 }
 
 - (void)savePersistedData {
@@ -77,6 +91,63 @@ RCT_EXPORT_MODULE()
   NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
   [dateFormatter setDateFormat:@"yyyy-MM-dd"];
   return [dateFormatter stringFromDate:[NSDate date]];
+}
+
+- (void)saveStepHistory:(NSString *)date steps:(NSInteger)steps {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  NSString *key = [NSString stringWithFormat:@"%@%@", kRNPedometerHistoryPrefix, date];
+  [defaults setInteger:steps forKey:key];
+  [defaults synchronize];
+}
+
+- (void)cleanupOldHistory {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  NSCalendar *calendar = [NSCalendar currentCalendar];
+  NSDate *cutoffDate = [calendar dateByAddingUnit:NSCalendarUnitDay
+                                            value:-kRNPedometerMaxHistoryDays
+                                           toDate:[NSDate date]
+                                          options:0];
+
+  NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+  [dateFormatter setDateFormat:@"yyyy-MM-dd"];
+  NSString *cutoffDateString = [dateFormatter stringFromDate:cutoffDate];
+
+  NSDictionary *allDefaults = [defaults dictionaryRepresentation];
+  for (NSString *key in allDefaults.allKeys) {
+    if ([key hasPrefix:kRNPedometerHistoryPrefix]) {
+      NSString *date = [key substringFromIndex:kRNPedometerHistoryPrefix.length];
+      if ([date compare:cutoffDateString] == NSOrderedAscending) {
+        [defaults removeObjectForKey:key];
+      }
+    }
+  }
+  [defaults synchronize];
+}
+
+- (NSArray *)getStepHistoryInternal:(NSInteger)days {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  NSMutableArray *historyArray = [NSMutableArray array];
+  NSCalendar *calendar = [NSCalendar currentCalendar];
+  NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+  [dateFormatter setDateFormat:@"yyyy-MM-dd"];
+
+  // Get history for the last 'days' days (not including today)
+  for (NSInteger i = 1; i <= days; i++) {
+    NSDate *date = [calendar dateByAddingUnit:NSCalendarUnitDay
+                                       value:-i
+                                      toDate:[NSDate date]
+                                     options:0];
+    NSString *dateString = [dateFormatter stringFromDate:date];
+    NSString *key = [NSString stringWithFormat:@"%@%@", kRNPedometerHistoryPrefix, dateString];
+    NSInteger steps = [defaults integerForKey:key];
+
+    [historyArray addObject:@{
+      @"date": dateString,
+      @"steps": @(steps)
+    }];
+  }
+
+  return historyArray;
 }
 
 + (BOOL)requiresMainQueueSetup {
@@ -196,6 +267,23 @@ RCT_EXPORT_MODULE()
 - (void)stopPedometerUpdates {
   [self.pedometer stopPedometerUpdates];
   self.isTracking = NO;
+}
+
+- (void)getStepHistory:(double)days
+               resolve:(RCTPromiseResolveBlock)resolve
+                reject:(RCTPromiseRejectBlock)reject {
+  @try {
+    NSInteger requestedDays = (NSInteger)days;
+    if (requestedDays < 1) requestedDays = 1;
+    if (requestedDays > kRNPedometerMaxHistoryDays) requestedDays = kRNPedometerMaxHistoryDays;
+
+    NSArray *history = [self getStepHistoryInternal:requestedDays];
+    resolve(history);
+  } @catch (NSException *exception) {
+    reject(@"E_HISTORY_ERROR",
+           [NSString stringWithFormat:@"Failed to retrieve step history: %@", exception.reason],
+           nil);
+  }
 }
 
 #pragma mark - Turbo Module Requirements

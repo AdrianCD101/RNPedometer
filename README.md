@@ -12,6 +12,7 @@
 * Check if step counting is available on the device.
 * Listen for real-time step count updates.
 * **Persistent daily step tracking** - counts persist across app restarts and continue even when app is closed
+* **Step history** - query up to 30 days of historical step data
 * Automatic daily reset at midnight
 * Uses the native pedometer APIs for both iOS and Android.
 
@@ -72,9 +73,11 @@ import {
   startStepCounterUpdate,
   stopStepCounterUpdate,
   isStepCountingAvailable,
+  getStepHistory,
   addStepCountListener,
   removeStepCountListener,
   type StepCountData,
+  type StepHistoryData,
 } from '@mmeow223/rnpedometer';
 
 export default function App() {
@@ -178,6 +181,18 @@ Stops step counting.
 ### `isStepCountingAvailable(): Promise<boolean>`
 
 Checks if step counting is available on the device.
+
+### `getStepHistory(days: number): Promise<StepHistoryData[]>`
+
+Retrieves historical step data for the specified number of past days (max 30 days). Returns an array of objects containing:
+- `date`: Date string in format "YYYY-MM-DD"
+- `steps`: Total steps for that day
+
+Example:
+```tsx
+const history = await getStepHistory(7); // Get last 7 days
+// Returns: [{ date: '2025-11-04', steps: 8234 }, { date: '2025-11-03', steps: 10521 }, ...]
+```
 
 ### `addStepCountListener(callback: (event: StepCountData) => void): void`
 
