@@ -1,6 +1,7 @@
 package com.rnpedometer
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -8,6 +9,8 @@ import android.hardware.SensorManager
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.module.annotations.ReactModule
+import java.text.SimpleDateFormat
+import java.util.*
 
 
 @ReactModule(name = RNPedometerModule.NAME)
@@ -20,11 +23,68 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
   private var lastStepCount: Float = 0f
   private var initialStepCount: Float = -1f
   private var listenerCount = 0
+  private var sharedPreferences: SharedPreferences
+
+  companion object {
+    const val NAME = "RNPedometer"
+    private const val PREFS_NAME = "RNPedometerPrefs"
+    private const val KEY_INITIAL_STEP_COUNT = "initialStepCount"
+    private const val KEY_LAST_STEP_COUNT = "lastStepCount"
+    private const val KEY_SAVED_DATE = "savedDate"
+  }
 
   init {
     reactContext.addLifecycleEventListener(this)
     sensorManager = reactContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     stepCounter = sensorManager?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    sharedPreferences = reactContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    // Load persisted values
+    loadPersistedData()
+  }
+
+  private fun loadPersistedData() {
+    val savedDate = sharedPreferences.getString(KEY_SAVED_DATE, null)
+    val currentDate = getCurrentDate()
+
+    // If it's a new day, reset the counters
+    if (savedDate != currentDate) {
+      clearPersistedData()
+    } else {
+      // Load saved values
+      val savedInitial = sharedPreferences.getFloat(KEY_INITIAL_STEP_COUNT, -1f)
+      val savedLast = sharedPreferences.getFloat(KEY_LAST_STEP_COUNT, 0f)
+
+      if (savedInitial != -1f) {
+        initialStepCount = savedInitial
+        lastStepCount = savedLast
+      }
+    }
+  }
+
+  private fun savePersistedData() {
+    sharedPreferences.edit().apply {
+      putFloat(KEY_INITIAL_STEP_COUNT, initialStepCount)
+      putFloat(KEY_LAST_STEP_COUNT, lastStepCount)
+      putString(KEY_SAVED_DATE, getCurrentDate())
+      apply()
+    }
+  }
+
+  private fun clearPersistedData() {
+    sharedPreferences.edit().apply {
+      remove(KEY_INITIAL_STEP_COUNT)
+      remove(KEY_LAST_STEP_COUNT)
+      remove(KEY_SAVED_DATE)
+      apply()
+    }
+    initialStepCount = -1f
+    lastStepCount = 0f
+  }
+
+  private fun getCurrentDate(): String {
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    return dateFormat.format(Date())
   }
 
 
@@ -97,12 +157,16 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
       if (initialStepCount < 0) {
         initialStepCount = steps
         lastStepCount = steps
+        savePersistedData()
       }
 
       val stepsDelta = steps - lastStepCount
       lastStepCount = steps
 
       val totalSteps = steps - initialStepCount
+
+      // Save updated values
+      savePersistedData()
 
       sendStepUpdate(stepsDelta.toInt(), totalSteps.toInt())
     }
@@ -146,9 +210,5 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
   override fun onHostDestroy() {
     sensorManager?.unregisterListener(this)
     listenerCount = 0
-  }
-
-  companion object {
-    const val NAME = "RNPedometer"
   }
 }

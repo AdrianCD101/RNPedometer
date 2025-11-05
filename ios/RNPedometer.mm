@@ -1,6 +1,10 @@
 #import "RNPedometer.h"
 #import <CoreMotion/CoreMotion.h>
 
+static NSString *const kRNPedometerInitialStepCount = @"RNPedometerInitialStepCount";
+static NSString *const kRNPedometerCurrentStepCount = @"RNPedometerCurrentStepCount";
+static NSString *const kRNPedometerSavedDate = @"RNPedometerSavedDate";
+
 @interface RNPedometer()
 @property (nonatomic, strong) CMPedometer *pedometer;
 @property (nonatomic, strong) NSNumber *initialStepCount;
@@ -21,8 +25,58 @@ RCT_EXPORT_MODULE()
     _currentStepCount = @0;
     _isTracking = NO;
     _listenerCount = 0;
+
+    // Load persisted data
+    [self loadPersistedData];
   }
   return self;
+}
+
+- (void)loadPersistedData {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  NSString *savedDate = [defaults stringForKey:kRNPedometerSavedDate];
+  NSString *currentDate = [self getCurrentDate];
+
+  // If it's a new day, reset the counters
+  if (![savedDate isEqualToString:currentDate]) {
+    [self clearPersistedData];
+  } else {
+    // Load saved values
+    NSNumber *savedInitial = [defaults objectForKey:kRNPedometerInitialStepCount];
+    NSNumber *savedCurrent = [defaults objectForKey:kRNPedometerCurrentStepCount];
+
+    if (savedInitial) {
+      _initialStepCount = savedInitial;
+      _currentStepCount = savedCurrent ?: @0;
+    }
+  }
+}
+
+- (void)savePersistedData {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  if (self.initialStepCount) {
+    [defaults setObject:self.initialStepCount forKey:kRNPedometerInitialStepCount];
+    [defaults setObject:self.currentStepCount forKey:kRNPedometerCurrentStepCount];
+    [defaults setObject:[self getCurrentDate] forKey:kRNPedometerSavedDate];
+    [defaults synchronize];
+  }
+}
+
+- (void)clearPersistedData {
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  [defaults removeObjectForKey:kRNPedometerInitialStepCount];
+  [defaults removeObjectForKey:kRNPedometerCurrentStepCount];
+  [defaults removeObjectForKey:kRNPedometerSavedDate];
+  [defaults synchronize];
+
+  _initialStepCount = nil;
+  _currentStepCount = @0;
+}
+
+- (NSString *)getCurrentDate {
+  NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+  [dateFormatter setDateFormat:@"yyyy-MM-dd"];
+  return [dateFormatter stringFromDate:[NSDate date]];
 }
 
 + (BOOL)requiresMainQueueSetup {
@@ -102,15 +156,19 @@ RCT_EXPORT_MODULE()
     if (!strongSelf.initialStepCount) {
       strongSelf.initialStepCount = pedometerData.numberOfSteps;
       strongSelf.currentStepCount = pedometerData.numberOfSteps;
+      [strongSelf savePersistedData];
     }
-    
+
     // Calculate steps since last update
     NSInteger stepsDelta = [pedometerData.numberOfSteps integerValue] - [strongSelf.currentStepCount integerValue];
     strongSelf.currentStepCount = pedometerData.numberOfSteps;
-    
+
     // Calculate total steps since starting tracking
     NSInteger totalSteps = [pedometerData.numberOfSteps integerValue] - [strongSelf.initialStepCount integerValue];
-    
+
+    // Save updated values
+    [strongSelf savePersistedData];
+
     if (strongSelf.listenerCount > 0) {
       [strongSelf sendEventWithName:@"StepCounterUpdate" body:@{
         @"steps": @(stepsDelta),

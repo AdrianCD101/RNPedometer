@@ -4,14 +4,26 @@
 
 `@mmeow223/rnpedometer` is a React Native module that provides access to the pedometer of a mobile device, allowing you to listen for step count updates in real-time.
 
-⚠ **iOS Implementation Not Available Yet** Currently, this package only supports Android. iOS support is not implemented yet. Contributions are welcome!
+✅ **Full iOS and Android Support** Both platforms are fully supported!
 
 ## Features
 
 * Start and stop step counting.
 * Check if step counting is available on the device.
 * Listen for real-time step count updates.
+* **Persistent daily step tracking** - counts persist across app restarts and continue even when app is closed
+* Automatic daily reset at midnight
 * Uses the native pedometer APIs for both iOS and Android.
+
+## How It Works
+
+The module uses hardware-level step counting that works even when your app is closed:
+
+**Android**: Uses `Sensor.TYPE_STEP_COUNTER` which tracks steps at the OS level. Steps are counted continuously by the device, and the module saves your daily baseline to calculate today's total steps.
+
+**iOS**: Uses CoreMotion's `CMPedometer` which provides system-level step tracking. Step counts are automatically tracked by iOS and persist across app restarts.
+
+**Daily Reset**: Both platforms automatically reset step counts at midnight to track daily totals, just like Apple Fitness!
 
 ## Installation
 
