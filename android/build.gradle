@@ -112,6 +112,7 @@ def kotlin_version = getExtOrDefault("kotlinVersion")
 dependencies {
   implementation "com.facebook.react:react-android:0.77.0"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  implementation "androidx.work:work-runtime-ktx:2.9.0"
 }
 
 if (isNewArchitectureEnabled()) {

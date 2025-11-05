@@ -13,6 +13,7 @@
 * Listen for real-time step count updates.
 * **Persistent daily step tracking** - counts persist across app restarts and continue even when app is closed
 * **Step history** - query up to 30 days of historical step data
+* **Background sync** - capture steps even when app isn't opened for days (Android WorkManager + iOS backfill)
 * Automatic daily reset at midnight
 * Uses the native pedometer APIs for both iOS and Android.
 
@@ -25,6 +26,37 @@ The module uses hardware-level step counting that works even when your app is cl
 **iOS**: Uses CoreMotion's `CMPedometer` which provides system-level step tracking. Step counts are automatically tracked by iOS and persist across app restarts.
 
 **Daily Reset**: Both platforms automatically reset step counts at midnight to track daily totals, just like Apple Fitness!
+
+## Background Sync (Recommended)
+
+To ensure step history is captured even when users don't open the app for several days:
+
+### Android
+Enable WorkManager-based background sync to save daily step counts:
+```tsx
+import { enableBackgroundSync } from '@mmeow223/rnpedometer';
+
+// Enable daily background task (runs once per day)
+await enableBackgroundSync();
+```
+
+This schedules a daily background worker that:
+- Runs approximately once every 24 hours
+- Reads the step sensor and saves yesterday's total
+- Works even when app is closed (battery efficient)
+- Survives device restarts
+
+### iOS
+iOS automatically backfills missing days when the app opens:
+- CMPedometer stores up to 7 days of step data
+- When app opens after multiple days, missing days are automatically backfilled
+- No background tasks needed - iOS handles it natively
+
+```tsx
+// On iOS, enableBackgroundSync() is a no-op (returns success)
+// Backfilling happens automatically when app opens
+await enableBackgroundSync();
+```
 
 ## Installation
 
@@ -74,6 +106,8 @@ import {
   stopStepCounterUpdate,
   isStepCountingAvailable,
   getStepHistory,
+  enableBackgroundSync,
+  disableBackgroundSync,
   addStepCountListener,
   removeStepCountListener,
   type StepCountData,
@@ -193,6 +227,22 @@ Example:
 const history = await getStepHistory(7); // Get last 7 days
 // Returns: [{ date: '2025-11-04', steps: 8234 }, { date: '2025-11-03', steps: 10521 }, ...]
 ```
+
+### `enableBackgroundSync(): Promise<boolean>`
+
+Enables background synchronization to capture step history even when app is not opened.
+
+**Android**: Schedules a daily WorkManager task to save step counts.
+**iOS**: No-op (returns true) - iOS automatically backfills from CMPedometer when app opens.
+
+Example:
+```tsx
+await enableBackgroundSync(); // Recommended to call once on app startup
+```
+
+### `disableBackgroundSync(): Promise<boolean>`
+
+Disables background synchronization (Android only).
 
 ### `addStepCountListener(callback: (event: StepCountData) => void): void`
 

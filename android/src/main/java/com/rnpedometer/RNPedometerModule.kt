@@ -6,11 +6,15 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.module.annotations.ReactModule
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 
 @ReactModule(name = RNPedometerModule.NAME)
@@ -220,6 +224,37 @@ class RNPedometerModule(reactContext: ReactApplicationContext) :
       promise.resolve(history)
     } catch (e: Exception) {
       promise.reject("E_HISTORY_ERROR", "Failed to retrieve step history: ${e.message}", e)
+    }
+  }
+
+  override fun enableBackgroundSync(promise: Promise) {
+    try {
+      // Schedule daily work to save step history
+      val workRequest = PeriodicWorkRequestBuilder<StepCounterWorker>(
+        1, TimeUnit.DAYS
+      ).build()
+
+      WorkManager.getInstance(reactApplicationContext)
+        .enqueueUniquePeriodicWork(
+          "StepCounterDailySync",
+          ExistingPeriodicWorkPolicy.KEEP,
+          workRequest
+        )
+
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("E_BACKGROUND_SYNC", "Failed to enable background sync: ${e.message}", e)
+    }
+  }
+
+  override fun disableBackgroundSync(promise: Promise) {
+    try {
+      WorkManager.getInstance(reactApplicationContext)
+        .cancelUniqueWork("StepCounterDailySync")
+
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("E_BACKGROUND_SYNC", "Failed to disable background sync: ${e.message}", e)
     }
   }
 

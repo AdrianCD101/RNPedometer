@@ -51,6 +51,9 @@ RCT_EXPORT_MODULE()
     }
 
     [self clearPersistedData];
+
+    // Backfill any missing days from CMPedometer
+    [self backfillMissingDaysFromCMPedometer:savedDate];
   } else if ([savedDate isEqualToString:currentDate]) {
     // Load saved values for today
     NSNumber *savedInitial = [defaults objectForKey:kRNPedometerInitialStepCount];
@@ -148,6 +151,57 @@ RCT_EXPORT_MODULE()
   }
 
   return historyArray;
+}
+
+- (void)backfillMissingDaysFromCMPedometer:(NSString *)lastSavedDate {
+  // Only backfill if CMPedometer data is available
+  if (![CMPedometer isStepCountingAvailable]) {
+    return;
+  }
+
+  NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+  [dateFormatter setDateFormat:@"yyyy-MM-dd"];
+  NSDate *lastDate = [dateFormatter dateFromString:lastSavedDate];
+  NSDate *today = [NSDate date];
+
+  if (!lastDate) {
+    return;
+  }
+
+  NSCalendar *calendar = [NSCalendar currentCalendar];
+  NSDateComponents *components = [calendar components:NSCalendarUnitDay
+                                              fromDate:lastDate
+                                                toDate:today
+                                               options:0];
+  NSInteger daysDiff = components.day;
+
+  // If more than 1 day has passed, backfill from CMPedometer (up to 7 days max)
+  if (daysDiff > 1 && daysDiff <= 7) {
+    for (NSInteger i = 1; i < daysDiff; i++) {
+      NSDate *targetDate = [calendar dateByAddingUnit:NSCalendarUnitDay
+                                               value:i
+                                              toDate:lastDate
+                                             options:0];
+
+      // Get start and end of the day
+      NSDate *startOfDay = [calendar startOfDayForDate:targetDate];
+      NSDate *endOfDay = [calendar dateByAddingUnit:NSCalendarUnitDay
+                                              value:1
+                                             toDate:startOfDay
+                                            options:0];
+
+      // Query CMPedometer for that day's data
+      [self.pedometer queryPedometerDataFromDate:startOfDay
+                                          toDate:endOfDay
+                                     withHandler:^(CMPedometerData * _Nullable pedometerData, NSError * _Nullable error) {
+        if (!error && pedometerData && pedometerData.numberOfSteps) {
+          NSString *dateString = [dateFormatter stringFromDate:targetDate];
+          NSInteger steps = [pedometerData.numberOfSteps integerValue];
+          [self saveStepHistory:dateString steps:steps];
+        }
+      }];
+    }
+  }
 }
 
 + (BOOL)requiresMainQueueSetup {
@@ -284,6 +338,19 @@ RCT_EXPORT_MODULE()
            [NSString stringWithFormat:@"Failed to retrieve step history: %@", exception.reason],
            nil);
   }
+}
+
+- (void)enableBackgroundSync:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject {
+  // iOS doesn't need explicit background sync - CMPedometer handles it automatically
+  // When app opens, we backfill any missing days from CMPedometer
+  resolve(@(YES));
+}
+
+- (void)disableBackgroundSync:(RCTPromiseResolveBlock)resolve
+                       reject:(RCTPromiseRejectBlock)reject {
+  // iOS doesn't have active background sync, so nothing to disable
+  resolve(@(YES));
 }
 
 #pragma mark - Turbo Module Requirements

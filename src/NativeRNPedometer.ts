@@ -19,6 +19,10 @@ export interface Spec extends TurboModule {
   isStepCountingAvailable(): Promise<boolean>;
   getStepHistory(days: number): Promise<StepHistoryData[]>;
 
+  // Background sync methods
+  enableBackgroundSync(): Promise<boolean>;
+  disableBackgroundSync(): Promise<boolean>;
+
   // Event emitter methods required by NativeEventEmitter
   addListener(eventName: string): void;
   removeListeners(count: number): void;

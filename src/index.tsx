@@ -25,6 +25,14 @@ export function getStepHistory(days: number): Promise<StepHistoryData[]> {
   return RNPedometer.getStepHistory(days);
 }
 
+export function enableBackgroundSync(): Promise<boolean> {
+  return RNPedometer.enableBackgroundSync();
+}
+
+export function disableBackgroundSync(): Promise<boolean> {
+  return RNPedometer.disableBackgroundSync();
+}
+
 export function addStepCountListener(callback: (event: StepCountData) => void) {
   return eventEmitter.addListener('StepCounterUpdate', callback);
 }
@@ -38,6 +46,8 @@ const RNPedometerModule = {
   stopStepCounterUpdate,
   isStepCountingAvailable,
   getStepHistory,
+  enableBackgroundSync,
+  disableBackgroundSync,
   addStepCountListener,
   removeStepCountListener,
 };
